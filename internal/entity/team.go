@@ -6,7 +6,7 @@ type Member struct {
 	IsActive bool
 }
 
-type Teams struct {
+type Team struct {
 	TeamName string
 	Members  []Member
 }

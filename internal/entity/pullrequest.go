@@ -9,7 +9,7 @@ type PullRequest struct {
 	Status            string
 	AssignedReviewers []string
 	CreatedAt         time.Time
-	MergeAt           time.Time
+	MergeAt           *time.Time
 }
 
 type ShortPullRequest struct {
