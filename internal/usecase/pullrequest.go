@@ -48,7 +48,18 @@ func (uc *PullRequestUseCase) Create(feature entity.ShortPullRequest) (entity.Pu
 		return entity.PullRequest{}, err
 	}
 
-	Reviewers, err := uc.teamRepo.GetReviewes(feature.AuthorId)
+	vasya, err := uc.userRepo.UserById(feature.AuthorId)
+
+	if err != nil {
+		return entity.PullRequest{}, entity.ErrorResponse{
+			Error: entity.Error{
+				Code:    entity.NO_PREDICTED,
+				Message: err.Error(),
+			},
+		}
+	}
+
+	Reviewers, err := uc.teamRepo.GetReviewes(vasya.UserId, vasya.TeamName)
 
 	if err != nil {
 		return entity.PullRequest{}, entity.ErrorResponse{
@@ -121,7 +132,18 @@ func (uc *PullRequestUseCase) Reassign(PullRequestId string, oldUserId string) (
 		}
 	}
 
-	newReviewer, err := uc.teamRepo.NewReviewer(oldUserId, request.AuthorId)
+	vasya, err := uc.userRepo.UserById(request.AuthorId)
+
+	if err != nil {
+		return entity.PullRequest{}, entity.ErrorResponse{
+			Error: entity.Error{
+				Code:    entity.NO_PREDICTED,
+				Message: err.Error(),
+			},
+		}
+	}
+
+	newReviewer, err := uc.teamRepo.NewReviewer(oldUserId, vasya.UserId, vasya.TeamName)
 
 	if err != nil {
 		if errors.Is(err, errors.New(entity.NO_CANDIDATE)) {
