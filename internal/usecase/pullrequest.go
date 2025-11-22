@@ -3,6 +3,7 @@ package usecase
 import (
 	"Avito/internal/entity"
 	"errors"
+	"math/rand"
 	"time"
 )
 
@@ -13,12 +14,24 @@ type PullRequestRepository interface {
 	RequestsById(UserId string) ([]entity.ShortPullRequest, error)
 	IsExists(PullRequestId string) bool
 	RequestByID(PullRequestId string) (entity.PullRequest, error)
+	IsMerged(PullRequestId string) (bool, error)
 }
 
 type PullRequestUseCase struct {
 	pullrequestRepo PullRequestRepository
 	userRepo        UserRepository
 	teamRepo        TeamRepository
+}
+
+func NewPullRequestUseCase(
+	pullrequestRepo PullRequestRepository,
+	userRepo UserRepository,
+	teamRepo TeamRepository) *PullRequestUseCase {
+	return &PullRequestUseCase{
+		pullrequestRepo: pullrequestRepo,
+		userRepo:        userRepo,
+		teamRepo:        teamRepo,
+	}
 }
 
 func (uc *PullRequestUseCase) Create(feature entity.ShortPullRequest) (entity.PullRequest, error) {
@@ -40,7 +53,26 @@ func (uc *PullRequestUseCase) Create(feature entity.ShortPullRequest) (entity.Pu
 		return entity.PullRequest{}, errors.New(entity.NO_PREDICTED)
 	}
 
-	Reviewers, err := uc.teamRepo.GetReviewes(vasya.UserId, vasya.TeamName)
+	team, err := uc.teamRepo.GetByName(vasya.TeamName)
+
+	if err != nil {
+		return entity.PullRequest{}, errors.New(entity.NO_PREDICTED)
+	}
+
+	CountOfMembers, err := uc.teamRepo.CountActiveMembers(team.TeamName)
+
+	if err != nil {
+		return entity.PullRequest{}, errors.New(entity.NO_PREDICTED)
+	}
+
+	var RandomNum int
+	if CountOfMembers-1 < 2 {
+		RandomNum = rand.Intn(2)
+	} else {
+		RandomNum = rand.Intn(3)
+	}
+
+	Reviewers, err := uc.teamRepo.GetReviewes(vasya.UserId, vasya.TeamName, RandomNum)
 
 	if err != nil {
 		return entity.PullRequest{}, errors.New(entity.NO_PREDICTED)
@@ -82,10 +114,37 @@ func (uc *PullRequestUseCase) Reassign(PullRequestId string, oldUserId string) (
 		return entity.PullRequest{}, errors.New(entity.NOT_FOUND)
 	}
 
+	merged, err := uc.pullrequestRepo.IsMerged(PullRequestId)
+
+	if err != nil {
+		return entity.PullRequest{}, errors.New(entity.NO_PREDICTED)
+	}
+
+	if merged {
+		return entity.PullRequest{}, errors.New(entity.PR_MERGED)
+	}
+
 	request, err := uc.pullrequestRepo.RequestByID(PullRequestId)
 
 	if err != nil {
 		return entity.PullRequest{}, errors.New(entity.NO_PREDICTED)
+	}
+
+	var IsReviewer bool
+	for _, v := range request.AssignedReviewers {
+		if v == oldUserId {
+			IsReviewer = true
+		}
+	}
+
+	if !IsReviewer {
+		return entity.PullRequest{}, errors.New(entity.NOT_ASSIGNED)
+	}
+
+	exists = uc.userRepo.IsExists(oldUserId)
+
+	if !exists {
+		return entity.PullRequest{}, errors.New(entity.NOT_FOUND)
 	}
 
 	vasya, err := uc.userRepo.UserById(request.AuthorId)
@@ -103,9 +162,9 @@ func (uc *PullRequestUseCase) Reassign(PullRequestId string, oldUserId string) (
 		return entity.PullRequest{}, errors.New(entity.NO_PREDICTED)
 	}
 
-	for _, v := range request.AssignedReviewers {
+	for k, v := range request.AssignedReviewers {
 		if v == oldUserId {
-			v = newReviewer
+			request.AssignedReviewers[k] = newReviewer
 		}
 	}
 
@@ -146,4 +205,12 @@ func (uc *PullRequestUseCase) RequestByID(PullRequestId string) (entity.PullRequ
 	}
 
 	return request, nil
+}
+
+func (us *PullRequestUseCase) IsMerged(PullRequestId string) (bool, error) {
+	if exists := us.teamRepo.IsExists(PullRequestId); !exists {
+		return false, errors.New(entity.NOT_FOUND)
+	}
+
+	return us.pullrequestRepo.IsMerged(PullRequestId)
 }

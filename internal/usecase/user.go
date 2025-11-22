@@ -18,6 +18,15 @@ type UserUseCase struct {
 	pullrequestRepo PullRequestRepository
 }
 
+func NewUserUseCase(
+	userRepo UserRepository,
+	pullrequestRepo PullRequestRepository) *UserUseCase {
+	return &UserUseCase{
+		userRepo:        userRepo,
+		pullrequestRepo: pullrequestRepo,
+	}
+}
+
 func (uc *UserUseCase) Save(vasya entity.User) (entity.User, error) {
 	exist := uc.userRepo.IsExists(vasya.UserId)
 
@@ -36,8 +45,8 @@ func (uc *UserUseCase) Save(vasya entity.User) (entity.User, error) {
 func (uc *UserUseCase) SetIsActive(userId string, isActive bool) (entity.User, error) {
 	exist := uc.userRepo.IsExists(userId)
 
-	if exist {
-		return entity.User{}, errors.New(entity.USER_EXISITS)
+	if !exist {
+		return entity.User{}, errors.New(entity.NOT_FOUND)
 	}
 
 	vasya, err := uc.userRepo.SetIsActive(userId, isActive)

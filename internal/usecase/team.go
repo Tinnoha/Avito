@@ -3,19 +3,30 @@ package usecase
 import (
 	"Avito/internal/entity"
 	"errors"
+	"math/rand"
 )
 
 type TeamRepository interface {
-	GetReviewes(AuthorId string, teamName string) ([]string, error)
+	GetReviewes(AuthorId string, teamName string, count int) ([]string, error)
 	NewReviewer(AuthorId string, OldReviewer string, TeamName string) (string, error)
 	Create(entity.Team) (entity.Team, error)
 	GetByName(TeamName string) (entity.Team, error)
 	IsExists(TeamName string) bool
+	CountActiveMembers(TeamName string) (int, error)
 }
 
 type TeamUseCase struct {
 	teamRepo TeamRepository
 	userRepo UserRepository
+}
+
+func NewTeamUseCase(
+	userRepo UserRepository,
+	teamRepo TeamRepository) *TeamUseCase {
+	return &TeamUseCase{
+		userRepo: userRepo,
+		teamRepo: teamRepo,
+	}
 }
 
 func (uс *TeamUseCase) GetReviewes(AuthorId string) ([]string, error) {
@@ -31,7 +42,26 @@ func (uс *TeamUseCase) GetReviewes(AuthorId string) ([]string, error) {
 		return []string{}, errors.New(entity.NO_PREDICTED)
 	}
 
-	reviewers, err := uс.teamRepo.GetReviewes(vasya.UserId, vasya.TeamName)
+	team, err := uс.teamRepo.GetByName(vasya.TeamName)
+
+	if err != nil {
+		return []string{}, errors.New(entity.NO_PREDICTED)
+	}
+
+	CountOfMembers, err := uс.teamRepo.CountActiveMembers(team.TeamName)
+
+	if err != nil {
+		return []string{}, errors.New(entity.NO_PREDICTED)
+	}
+
+	var RandomNum int
+	if CountOfMembers-1 < 2 {
+		RandomNum = rand.Intn(2)
+	} else {
+		RandomNum = rand.Intn(3)
+	}
+
+	reviewers, err := uс.teamRepo.GetReviewes(vasya.UserId, vasya.TeamName, RandomNum)
 
 	if err != nil {
 		if errors.Is(err, errors.New(entity.NO_CANDIDATE)) {
@@ -112,7 +142,7 @@ func (uc *TeamUseCase) GetByName(TeamName string) (entity.Team, error) {
 	team, err := uc.teamRepo.GetByName(TeamName)
 
 	if err != nil {
-		return entity.Team{}, errors.New(entity.NOT_FOUND)
+		return entity.Team{}, errors.New(entity.NO_PREDICTED)
 	}
 
 	return team, nil
@@ -120,4 +150,20 @@ func (uc *TeamUseCase) GetByName(TeamName string) (entity.Team, error) {
 
 func (uc *TeamUseCase) IsExists(TeamName string) bool {
 	return uc.teamRepo.IsExists(TeamName)
+}
+
+func (uc *TeamUseCase) CountActiveMembers(TeamName string) (int, error) {
+	exists := uc.teamRepo.IsExists(TeamName)
+
+	if !exists {
+		return 0, errors.New(entity.NOT_FOUND)
+	}
+
+	count, err := uc.teamRepo.CountActiveMembers(TeamName)
+
+	if err != nil {
+		return 0, errors.New(entity.NO_PREDICTED)
+	}
+
+	return count, nil
 }

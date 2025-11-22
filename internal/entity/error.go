@@ -1,14 +1,5 @@
 package entity
 
-type Error struct {
-	Code    string `json:"code"`
-	Message string `json:"message"`
-}
-
-type ErrorResponse struct {
-	Error Error `json:"error"`
-}
-
 const TEAM_EXISITS string = "TEAM_EXISITS"
 const PR_EXISTS string = "PR_EXISTS"
 const PR_MERGED string = "PR_MERGED"
