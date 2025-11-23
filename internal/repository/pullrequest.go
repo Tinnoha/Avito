@@ -3,6 +3,7 @@ package repository
 import (
 	"Avito/internal/entity"
 	"database/sql"
+	"fmt"
 	"time"
 
 	"github.com/jmoiron/sqlx"
@@ -51,9 +52,13 @@ func (t *PullRequestRepo) Create(request entity.ShortPullRequest, reviewers []st
 
 func (t *PullRequestRepo) Merge(PullRequestId string) (entity.PullRequest, error) {
 	fullRequest := entity.PullRequest{}
-	_, err := t.db.Exec(`update pull_requests set merged_at = $1 where pull_request_id = $2`, time.Now(), PullRequestId)
+	_, err := t.db.Exec(`update pull_requests 
+	set merged_at = $1, 
+	status = 'merged' 
+	where pull_request_id = $2 `, time.Now(), PullRequestId)
 
 	if err != nil {
+		fmt.Println(err)
 		return entity.PullRequest{}, err
 	}
 

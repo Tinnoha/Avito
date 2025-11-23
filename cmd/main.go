@@ -4,10 +4,16 @@ import (
 	"Avito/internal/controller"
 	"Avito/internal/repository"
 	"Avito/internal/usecase"
+	"fmt"
+	"time"
 )
 
 func main() {
+	time.Sleep(5 * time.Second)
 	baza := repository.NewDatabase()
+	if baza == nil {
+		fmt.Println("error to connect db")
+	}
 
 	user := repository.NewUserRepo(baza)
 	team := repository.NewTeamRepo(baza)

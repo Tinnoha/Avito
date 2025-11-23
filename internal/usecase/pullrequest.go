@@ -65,8 +65,6 @@ func (uc *PullRequestUseCase) Create(feature entity.ShortPullRequest) (entity.Pu
 		RandomNum = rand.Intn(3)
 	}
 
-	fmt.Println("Random^", RandomNum)
-
 	if RandomNum > len(Reviewers) {
 		RandomNum = len(Reviewers)
 	}
