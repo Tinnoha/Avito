@@ -2,16 +2,15 @@ package usecase
 
 import (
 	"Avito/internal/entity"
-	"errors"
+	"fmt"
 	"math/rand"
-	"time"
 )
 
 type PullRequestRepository interface {
-	Create(entity.ShortPullRequest) (entity.PullRequest, error)
+	Create(request entity.ShortPullRequest, reviewers []string) (entity.PullRequest, error)
 	Merge(PullRequestId string) (entity.PullRequest, error)
-	Reassign(PullRequestId string, oldUserId string) (entity.PullRequest, error)
-	RequestsById(UserId string) ([]entity.ShortPullRequest, error)
+	Reassign(PullRequestId string, oldUserId string, newUserId string) error
+	RequestsById(UserId string, all bool) ([]entity.ShortPullRequest, error)
 	IsExists(PullRequestId string) bool
 	RequestByID(PullRequestId string) (entity.PullRequest, error)
 	IsMerged(PullRequestId string) (bool, error)
@@ -36,56 +35,59 @@ func NewPullRequestUseCase(
 
 func (uc *PullRequestUseCase) Create(feature entity.ShortPullRequest) (entity.PullRequest, error) {
 	exist := uc.pullrequestRepo.IsExists(feature.PullRequestId)
-
 	if exist {
-		return entity.PullRequest{}, errors.New(entity.PR_EXISTS)
+		return entity.PullRequest{}, ErrPRExists
 	}
 
 	existAuthor := uc.userRepo.IsExists(feature.AuthorId)
-
 	if !existAuthor {
-		return entity.PullRequest{}, errors.New(entity.NOT_FOUND)
+		return entity.PullRequest{}, ErrNotFound
 	}
 
 	vasya, err := uc.userRepo.UserById(feature.AuthorId)
-
 	if err != nil {
-		return entity.PullRequest{}, errors.New(entity.NO_PREDICTED)
+		return entity.PullRequest{}, ErrUnexpected
 	}
 
-	team, err := uc.teamRepo.GetByName(vasya.TeamName)
-
+	Reviewers, err := uc.teamRepo.GetReviewes(vasya.UserId, vasya.TeamName)
 	if err != nil {
-		return entity.PullRequest{}, errors.New(entity.NO_PREDICTED)
+		return entity.PullRequest{}, ErrNoCandidate
 	}
 
-	CountOfMembers, err := uc.teamRepo.CountActiveMembers(team.TeamName)
-
-	if err != nil {
-		return entity.PullRequest{}, errors.New(entity.NO_PREDICTED)
+	if len(Reviewers) == 0 {
+		return entity.PullRequest{}, ErrNoCandidate
 	}
 
 	var RandomNum int
-	if CountOfMembers-1 < 2 {
+	if len(Reviewers) < 2 {
 		RandomNum = rand.Intn(2)
 	} else {
 		RandomNum = rand.Intn(3)
 	}
 
-	Reviewers, err := uc.teamRepo.GetReviewes(vasya.UserId, vasya.TeamName, RandomNum)
+	fmt.Println("Random^", RandomNum)
 
-	if err != nil {
-		return entity.PullRequest{}, errors.New(entity.NO_PREDICTED)
+	if RandomNum > len(Reviewers) {
+		RandomNum = len(Reviewers)
 	}
 
-	Request := entity.PullRequest{
-		PullRequestId:     feature.PullRequestId,
-		PullRequestName:   feature.PullRequestName,
-		AuthorId:          feature.AuthorId,
-		Status:            "open",
-		AssignedReviewers: Reviewers,
-		CreatedAt:         time.Now(),
-		MergeAt:           nil,
+	rand.Shuffle(len(Reviewers), func(i, j int) {
+		Reviewers[i], Reviewers[j] = Reviewers[j], Reviewers[i]
+	})
+
+	Reviewers = Reviewers[:RandomNum]
+
+	request := entity.ShortPullRequest{
+		PullRequestId:   feature.PullRequestId,
+		PullRequestName: feature.PullRequestName,
+		AuthorId:        feature.AuthorId,
+		Status:          "open",
+	}
+
+	Request, err := uc.pullrequestRepo.Create(request, Reviewers)
+
+	if err != nil {
+		return entity.PullRequest{}, ErrUnexpected
 	}
 
 	return Request, nil
@@ -93,15 +95,21 @@ func (uc *PullRequestUseCase) Create(feature entity.ShortPullRequest) (entity.Pu
 
 func (uc *PullRequestUseCase) Merge(PullRequestId string) (entity.PullRequest, error) {
 	exists := uc.pullrequestRepo.IsExists(PullRequestId)
-
 	if !exists {
-		return entity.PullRequest{}, errors.New(entity.NOT_FOUND)
+		return entity.PullRequest{}, ErrNotFound
+	}
+
+	if merged, _ := uc.pullrequestRepo.IsMerged(PullRequestId); merged {
+		request, err := uc.pullrequestRepo.RequestByID(PullRequestId)
+		if err != nil {
+			return entity.PullRequest{}, ErrUnexpected
+		}
+		return request, nil
 	}
 
 	request, err := uc.pullrequestRepo.Merge(PullRequestId)
-
 	if err != nil {
-		return entity.PullRequest{}, errors.New(entity.NO_PREDICTED)
+		return entity.PullRequest{}, ErrUnexpected
 	}
 
 	return request, nil
@@ -109,108 +117,118 @@ func (uc *PullRequestUseCase) Merge(PullRequestId string) (entity.PullRequest, e
 
 func (uc *PullRequestUseCase) Reassign(PullRequestId string, oldUserId string) (entity.PullRequest, error) {
 	exists := uc.pullrequestRepo.IsExists(PullRequestId)
-
 	if !exists {
-		return entity.PullRequest{}, errors.New(entity.NOT_FOUND)
+		return entity.PullRequest{}, ErrNotFound
 	}
 
 	merged, err := uc.pullrequestRepo.IsMerged(PullRequestId)
-
 	if err != nil {
-		return entity.PullRequest{}, errors.New(entity.NO_PREDICTED)
+		return entity.PullRequest{}, ErrUnexpected
 	}
 
 	if merged {
-		return entity.PullRequest{}, errors.New(entity.PR_MERGED)
+		return entity.PullRequest{}, ErrPRMerged
 	}
 
 	request, err := uc.pullrequestRepo.RequestByID(PullRequestId)
-
 	if err != nil {
-		return entity.PullRequest{}, errors.New(entity.NO_PREDICTED)
+		return entity.PullRequest{}, ErrUnexpected
 	}
 
 	var IsReviewer bool
 	for _, v := range request.AssignedReviewers {
 		if v == oldUserId {
 			IsReviewer = true
+			break
 		}
 	}
 
 	if !IsReviewer {
-		return entity.PullRequest{}, errors.New(entity.NOT_ASSIGNED)
+		return entity.PullRequest{}, ErrNotAssigned
 	}
 
 	exists = uc.userRepo.IsExists(oldUserId)
-
 	if !exists {
-		return entity.PullRequest{}, errors.New(entity.NOT_FOUND)
+		return entity.PullRequest{}, ErrNotFound
 	}
 
 	vasya, err := uc.userRepo.UserById(request.AuthorId)
-
 	if err != nil {
-		return entity.PullRequest{}, errors.New(entity.NO_PREDICTED)
+		return entity.PullRequest{}, ErrUnexpected
 	}
 
-	newReviewer, err := uc.teamRepo.NewReviewer(oldUserId, vasya.UserId, vasya.TeamName)
-
+	newReviewers, err := uc.teamRepo.NewReviewer(vasya.UserId, oldUserId, vasya.TeamName, PullRequestId)
 	if err != nil {
-		if errors.Is(err, errors.New(entity.NO_CANDIDATE)) {
-			return entity.PullRequest{}, errors.New(entity.NO_CANDIDATE)
-		}
-		return entity.PullRequest{}, errors.New(entity.NO_PREDICTED)
+		return entity.PullRequest{}, ErrUnexpected
 	}
+
+	if len(newReviewers) == 0 {
+		return entity.PullRequest{}, ErrNoCandidate
+	}
+
+	RandomMember := rand.Intn(len(newReviewers))
 
 	for k, v := range request.AssignedReviewers {
 		if v == oldUserId {
-			request.AssignedReviewers[k] = newReviewer
+			request.AssignedReviewers[k] = newReviewers[RandomMember]
 		}
+	}
+
+	err = uc.pullrequestRepo.Reassign(PullRequestId, oldUserId, newReviewers[RandomMember])
+
+	if err != nil {
+		fmt.Println("10")
+		fmt.Println(err)
+		return entity.PullRequest{}, ErrUnexpected
+	}
+
+	_, err = uc.userRepo.SetIsActive(oldUserId, false)
+
+	if err != nil {
+		fmt.Println("11")
+		fmt.Println(err)
+		return entity.PullRequest{}, ErrUnexpected
 	}
 
 	return request, nil
 }
 
-func (uc *PullRequestUseCase) RequestsById(UserId string) ([]entity.ShortPullRequest, error) {
+func (uc *PullRequestUseCase) RequestsById(UserId string, all bool) ([]entity.ShortPullRequest, error) {
 	exists := uc.userRepo.IsExists(UserId)
-
 	if !exists {
-		return []entity.ShortPullRequest{}, errors.New(entity.NOT_FOUND)
+		return nil, ErrNotFound
 	}
 
-	Requests, err := uc.pullrequestRepo.RequestsById(UserId)
-
+	Requests, err := uc.pullrequestRepo.RequestsById(UserId, all)
 	if err != nil {
-		return []entity.ShortPullRequest{}, errors.New(entity.NO_PREDICTED)
+		return nil, ErrUnexpected
 	}
 
 	return Requests, nil
 }
 
-func (us *PullRequestUseCase) IsExists(PullRequestId string) bool {
-	return us.pullrequestRepo.IsExists(PullRequestId)
+func (uc *PullRequestUseCase) IsExists(PullRequestId string) bool {
+	return uc.pullrequestRepo.IsExists(PullRequestId)
 }
 
 func (uc *PullRequestUseCase) RequestByID(PullRequestId string) (entity.PullRequest, error) {
 	exists := uc.pullrequestRepo.IsExists(PullRequestId)
-
 	if !exists {
-		return entity.PullRequest{}, errors.New(entity.NOT_FOUND)
+		return entity.PullRequest{}, ErrNotFound
 	}
 
 	request, err := uc.pullrequestRepo.RequestByID(PullRequestId)
-
 	if err != nil {
-		return entity.PullRequest{}, errors.New(entity.NO_PREDICTED)
+		return entity.PullRequest{}, ErrUnexpected
 	}
 
 	return request, nil
 }
 
-func (us *PullRequestUseCase) IsMerged(PullRequestId string) (bool, error) {
-	if exists := us.teamRepo.IsExists(PullRequestId); !exists {
-		return false, errors.New(entity.NOT_FOUND)
+func (uc *PullRequestUseCase) IsMerged(PullRequestId string) (bool, error) {
+	if exists := uc.pullrequestRepo.IsExists(PullRequestId); !exists {
+		return false, ErrNotFound
 	}
 
-	return us.pullrequestRepo.IsMerged(PullRequestId)
+	return uc.pullrequestRepo.IsMerged(PullRequestId)
 }

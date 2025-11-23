@@ -2,17 +2,16 @@ package usecase
 
 import (
 	"Avito/internal/entity"
-	"errors"
+	"fmt"
 	"math/rand"
 )
 
 type TeamRepository interface {
-	GetReviewes(AuthorId string, teamName string, count int) ([]string, error)
-	NewReviewer(AuthorId string, OldReviewer string, TeamName string) (string, error)
-	Create(entity.Team) (entity.Team, error)
+	GetReviewes(AuthorId string, teamName string) ([]string, error)
+	NewReviewer(AuthorId string, OldReviewer string, TeamName string, PullRequestId string) ([]string, error)
+	Create(entity.Team) (entity.Team, int, error)
 	GetByName(TeamName string) (entity.Team, error)
 	IsExists(TeamName string) bool
-	CountActiveMembers(TeamName string) (int, error)
 }
 
 type TeamUseCase struct {
@@ -29,104 +28,107 @@ func NewTeamUseCase(
 	}
 }
 
-func (uс *TeamUseCase) GetReviewes(AuthorId string) ([]string, error) {
-	exists := uс.userRepo.IsExists(AuthorId)
+func (uc *TeamUseCase) GetReviewes(AuthorId string) ([]string, error) {
+	exists := uc.userRepo.IsExists(AuthorId)
 
 	if !exists {
-		return []string{}, errors.New(entity.NOT_FOUND)
+		return nil, ErrNotFound
 	}
 
-	vasya, err := uс.userRepo.UserById(AuthorId)
-
+	vasya, err := uc.userRepo.UserById(AuthorId)
 	if err != nil {
-		return []string{}, errors.New(entity.NO_PREDICTED)
+		return nil, ErrUnexpected
 	}
 
-	team, err := uс.teamRepo.GetByName(vasya.TeamName)
-
+	reviewers, err := uc.teamRepo.GetReviewes(vasya.UserId, vasya.TeamName)
 	if err != nil {
-		return []string{}, errors.New(entity.NO_PREDICTED)
+		return nil, ErrNoCandidate
 	}
-
-	CountOfMembers, err := uс.teamRepo.CountActiveMembers(team.TeamName)
-
-	if err != nil {
-		return []string{}, errors.New(entity.NO_PREDICTED)
-	}
-
 	var RandomNum int
-	if CountOfMembers-1 < 2 {
+	if len(reviewers) < 2 {
 		RandomNum = rand.Intn(2)
 	} else {
 		RandomNum = rand.Intn(3)
 	}
 
-	reviewers, err := uс.teamRepo.GetReviewes(vasya.UserId, vasya.TeamName, RandomNum)
-
-	if err != nil {
-		if errors.Is(err, errors.New(entity.NO_CANDIDATE)) {
-			return []string{}, errors.New(entity.NO_CANDIDATE)
-		} else {
-			return []string{}, errors.New(entity.NO_PREDICTED)
-		}
+	if RandomNum > len(reviewers) {
+		RandomNum = len(reviewers)
 	}
 
-	return reviewers, nil
+	rand.Shuffle(len(reviewers), func(i, j int) {
+		reviewers[i], reviewers[j] = reviewers[j], reviewers[i]
+	})
+
+	return reviewers[:RandomNum], nil
 }
 
-func (uc *TeamUseCase) NewReviewer(AuthorId string, OldReviewer string) (string, error) {
+func (uc *TeamUseCase) NewReviewer(AuthorId string, OldReviewer string, PullRequestId string) (string, error) {
 	exists := uc.userRepo.IsExists(AuthorId)
-
 	if !exists {
-		return "", errors.New(entity.NOT_FOUND)
+		return "", ErrNotFound
 	}
 
 	exists = uc.userRepo.IsExists(OldReviewer)
-
 	if !exists {
-		return "", errors.New(entity.NOT_FOUND)
+		return "", ErrNotFound
 	}
 
 	vasya, err := uc.userRepo.UserById(AuthorId)
-
 	if err != nil {
-		return "", errors.New(entity.NO_PREDICTED)
+		return "", ErrUnexpected
 	}
 
-	reviewers, err := uc.teamRepo.NewReviewer(vasya.UserId, OldReviewer, vasya.TeamName)
-
+	reviewers, err := uc.teamRepo.NewReviewer(vasya.UserId, OldReviewer, vasya.TeamName, PullRequestId)
 	if err != nil {
-		return "", errors.New(entity.NO_PREDICTED)
+		return "", ErrUnexpected
 	}
+
+	if len(reviewers) == 0 {
+		return "", ErrNoCandidate
+	}
+
+	RandomMember := rand.Intn(len(reviewers))
+	fmt.Println("2111")
 
 	_, err = uc.userRepo.SetIsActive(OldReviewer, false)
-
 	if err != nil {
-		return "", errors.New(entity.NO_PREDICTED)
+		fmt.Println("w")
+		return "", ErrUnexpected
 	}
 
-	return reviewers, nil
+	return reviewers[RandomMember], nil
 }
 
 func (uc *TeamUseCase) Create(team entity.Team) (entity.Team, error) {
 	for _, v := range team.Members {
 		exists := uc.userRepo.IsExists(v.UserId)
-
 		if exists {
-			return entity.Team{}, errors.New(entity.USER_EXISITS)
+			return entity.Team{}, ErrUserExists
 		}
 	}
 
 	exists := uc.teamRepo.IsExists(team.TeamName)
-
 	if exists {
-		return entity.Team{}, errors.New(entity.TEAM_EXISITS)
+		return entity.Team{}, ErrTeamExists
 	}
 
-	savedTeam, err := uc.teamRepo.Create(team)
-
+	savedTeam, id, err := uc.teamRepo.Create(team)
 	if err != nil {
-		return entity.Team{}, errors.New(entity.NO_PREDICTED)
+		return entity.Team{}, ErrUnexpected
+	}
+
+	for _, v := range team.Members {
+		vasya := entity.User{
+			TeamName: team.TeamName,
+			UserId:   v.UserId,
+			Username: v.Username,
+			IsActive: v.IsActive,
+		}
+
+		_, err := uc.userRepo.Save(vasya, id)
+		if err != nil {
+			return entity.Team{}, ErrUnexpected
+		}
 	}
 
 	return savedTeam, nil
@@ -134,15 +136,13 @@ func (uc *TeamUseCase) Create(team entity.Team) (entity.Team, error) {
 
 func (uc *TeamUseCase) GetByName(TeamName string) (entity.Team, error) {
 	exists := uc.teamRepo.IsExists(TeamName)
-
 	if !exists {
-		return entity.Team{}, errors.New(entity.NOT_FOUND)
+		return entity.Team{}, ErrNotFound
 	}
 
 	team, err := uc.teamRepo.GetByName(TeamName)
-
 	if err != nil {
-		return entity.Team{}, errors.New(entity.NO_PREDICTED)
+		return entity.Team{}, ErrUnexpected
 	}
 
 	return team, nil
@@ -150,20 +150,4 @@ func (uc *TeamUseCase) GetByName(TeamName string) (entity.Team, error) {
 
 func (uc *TeamUseCase) IsExists(TeamName string) bool {
 	return uc.teamRepo.IsExists(TeamName)
-}
-
-func (uc *TeamUseCase) CountActiveMembers(TeamName string) (int, error) {
-	exists := uc.teamRepo.IsExists(TeamName)
-
-	if !exists {
-		return 0, errors.New(entity.NOT_FOUND)
-	}
-
-	count, err := uc.teamRepo.CountActiveMembers(TeamName)
-
-	if err != nil {
-		return 0, errors.New(entity.NO_PREDICTED)
-	}
-
-	return count, nil
 }

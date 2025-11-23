@@ -2,13 +2,11 @@ package usecase
 
 import (
 	"Avito/internal/entity"
-	"errors"
 )
 
 type UserRepository interface {
-	Save(entity.User) (entity.User, error)
+	Save(entity.User, int) (entity.User, error)
 	SetIsActive(userId string, isActive bool) (entity.User, error)
-	GetReview(userId string) ([]entity.ShortPullRequest, error)
 	IsExists(userId string) bool
 	UserById(userId string) (entity.User, error)
 }
@@ -27,16 +25,15 @@ func NewUserUseCase(
 	}
 }
 
-func (uc *UserUseCase) Save(vasya entity.User) (entity.User, error) {
+func (uc *UserUseCase) Save(vasya entity.User, id int) (entity.User, error) {
 	exist := uc.userRepo.IsExists(vasya.UserId)
-
 	if exist {
-		return entity.User{}, errors.New(entity.USER_EXISITS)
+		return entity.User{}, ErrUserExists
 	}
 
-	vasya, err := uc.userRepo.Save(vasya)
+	vasya, err := uc.userRepo.Save(vasya, id)
 	if err != nil {
-		return entity.User{}, errors.New(entity.NO_PREDICTED)
+		return entity.User{}, ErrUnexpected
 	}
 
 	return vasya, nil
@@ -44,30 +41,27 @@ func (uc *UserUseCase) Save(vasya entity.User) (entity.User, error) {
 
 func (uc *UserUseCase) SetIsActive(userId string, isActive bool) (entity.User, error) {
 	exist := uc.userRepo.IsExists(userId)
-
 	if !exist {
-		return entity.User{}, errors.New(entity.NOT_FOUND)
+		return entity.User{}, ErrNotFound
 	}
 
 	vasya, err := uc.userRepo.SetIsActive(userId, isActive)
 	if err != nil {
-		return entity.User{}, errors.New(entity.NO_PREDICTED)
+		return entity.User{}, ErrUnexpected
 	}
 
 	return vasya, nil
 }
 
-func (uc *UserUseCase) GetReview(userId string) ([]entity.ShortPullRequest, error) {
+func (uc *UserUseCase) GetReview(userId string, all bool) ([]entity.ShortPullRequest, error) {
 	exist := uc.userRepo.IsExists(userId)
-
-	if exist {
-		return []entity.ShortPullRequest{}, errors.New(entity.USER_EXISITS)
+	if !exist {
+		return nil, ErrNotFound
 	}
 
-	requests, err := uc.pullrequestRepo.RequestsById(userId)
-
+	requests, err := uc.pullrequestRepo.RequestsById(userId, all)
 	if err != nil {
-		return []entity.ShortPullRequest{}, errors.New(entity.NO_PREDICTED)
+		return nil, ErrUnexpected
 	}
 
 	return requests, nil
@@ -79,16 +73,14 @@ func (uc *UserUseCase) IsExists(userId string) bool {
 
 func (uc *UserUseCase) UserById(userId string) (entity.User, error) {
 	exist := uc.userRepo.IsExists(userId)
-
-	if exist {
-		return entity.User{}, errors.New(entity.USER_EXISITS)
+	if !exist {
+		return entity.User{}, ErrNotFound
 	}
 
-	kolya, err := uc.userRepo.UserById(userId)
-
+	user, err := uc.userRepo.UserById(userId)
 	if err != nil {
-		return entity.User{}, errors.New(entity.NO_PREDICTED)
+		return entity.User{}, ErrUnexpected
 	}
 
-	return kolya, nil
+	return user, nil
 }

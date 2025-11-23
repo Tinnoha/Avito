@@ -23,7 +23,8 @@ func (s *HTTPServer) Run() error {
 	router.Path("/team/get").Methods(http.MethodGet).HandlerFunc(s.Hendlers.TeamGet)
 
 	router.Path("/users/setIsActive").Methods(http.MethodPost).HandlerFunc(s.Hendlers.UserIsActive)
-	router.Path("/users/getReview").Methods(http.MethodGet).HandlerFunc(s.Hendlers.UserGetRewiew)
+	router.Path("/users/getReview").Methods(http.MethodGet).HandlerFunc(s.Hendlers.UserGetAllRewiew)
+	router.Path("/users/getOpenReview").Methods(http.MethodGet).HandlerFunc(s.Hendlers.UserGetOpenRewiew)
 
 	router.Path("/pullRequest/create").Methods(http.MethodPost).HandlerFunc(s.Hendlers.RequestCreate)
 	router.Path("/pullRequest/merge").Methods(http.MethodPost).HandlerFunc(s.Hendlers.RequestMerge)
